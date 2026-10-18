@@ -1,191 +1,129 @@
 # RetinaAI — Explainable AI for Diabetic Retinopathy Screening
 
-[![CI Pipeline](https://github.com/navjot-singh-2005/RetinaAI-Explainable-DR-Screening/actions/workflows/ci.yml/badge.svg)](https://github.com/navjot-singh-2005/RetinaAI-Explainable-DR-Screening/actions/workflows/ci.yml)
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.38+-FF4B4B.svg?logo=streamlit&logoColor=white)](https://streamlit.io)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://docker.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## About the Project
 
-**RetinaAI** is a clinical-grade, safety-critical computer vision platform designed for automated Diabetic Retinopathy (DR) grading and triage from fundus photography. Powered by an EfficientNetV2-S backbone, the system integrates **Grad-CAM++ visual explainability**, **Monte Carlo Dropout epistemic uncertainty**, **energy-based out-of-distribution (OOD) detection**, **geometric fundus domain validation**, and a **calibrated clinical decision engine**.
+RetinaAI is an AI-assisted diabetic retinopathy (DR) screening platform that uses deep learning to classify retinal fundus images into five severity grades. The project integrates Explainable AI (XAI), uncertainty estimation, image quality assessment, and out-of-distribution (OOD) detection to make predictions more interpretable and support reliability-aware screening.
 
----
+The platform uses **EfficientNetV2-S** for image classification and provides an interactive dashboard built with Streamlit.
 
-## 🌟 Key Capabilities
+## Key Features
 
-- **5-Grade DR Classification**: ICDR grading (0: No DR, 1: Mild, 2: Moderate, 3: Severe, 4: Proliferative DR).
-- **Geometric Domain & Quality Gate**: Rejects non-fundus images (documents, outdoor scenes) via circular FOV contour analysis and dark border metrics; screens for severe blur or lighting defects.
-- **Explainable AI (XAI)**: Grad-CAM++ lesion heatmaps overlaid on retinal structures, verified via spatial entropy and deletion/insertion curves.
-- **Epistemic Uncertainty Estimation**: Fast head-cached Monte Carlo Dropout (15 stochastic forward passes) yielding entropy and predictive standard deviation.
-- **Energy-Based OOD Scoring**: Free-energy metric detects corruptions, non-retinal imagery, and artifact-heavy inputs.
-- **Clinical Decision Engine (Policy v2.1)**: Operating threshold calibrated for **$\ge 90\%$ referable DR sensitivity** with automated triage (`ROUTINE SCREENING`, `REFERRAL RECOMMENDED`, `URGENT REFERRAL`, `UNGRADABLE`).
-- **Smartphone Multi-Frame Fusion**: Quality-weighted aggregation over video or burst frames to eliminate false severity spikes.
-- **Deployment Ready**: Dual-interface support with an interactive **Streamlit Dashboard**, a **FastAPI REST API**, **Docker** containers (CPU & GPU), and **ONNX Runtime** export.
+- **Five-Class Classification:** Identifies five diabetic retinopathy severity grades.
+- **EfficientNetV2-S:** Uses a deep learning model fine-tuned for retinal image classification.
+- **Grad-CAM++ Explainability:** Generates heatmaps highlighting image regions contributing to predictions.
+- **MC Dropout:** Estimates model uncertainty through multiple stochastic predictions.
+- **OOD Detection:** Uses energy-based scoring to help identify potentially unfamiliar inputs.
+- **Image Quality Assessment:** Evaluates image quality before classification.
+- **Smartphone Multi-Frame Analysis:** Supports extracting and evaluating multiple frames from smartphone video.
+- **Interactive Dashboard:** Displays predictions, confidence scores, and visual explanations through Streamlit.
 
----
+## DR Severity Classification
 
-## 🏗️ System Pipeline Architecture
+| Grade | Description |
+|---|---|
+| Grade 0 | No Diabetic Retinopathy |
+| Grade 1 | Mild Diabetic Retinopathy |
+| Grade 2 | Moderate Diabetic Retinopathy |
+| Grade 3 | Severe Diabetic Retinopathy |
+| Grade 4 | Proliferative Diabetic Retinopathy (PDR) |
 
-```
-                                  [ Input Image ]
-                                         │
-                                         ▼
-                             ┌───────────────────────┐
-                             │  Geometric & Quality  │ ──► [REJECT: Invalid / Blurry]
-                             │       Domain Gate     │
-                             └───────────────────────┘
-                                         │ Pass
-                                         ▼
-                             ┌───────────────────────┐
-                             │ Preprocessing Engine  │ (Circle Crop, Ben Graham CLAHE,
-                             │   (512×512 Standard)  │  ImageNet Normalization)
-                             └───────────────────────┘
-                                         │
-                                         ▼
-                             ┌───────────────────────┐
-                             │   EfficientNetV2-S    │
-                             │ Backbone Feature Extr │
-                             └───────────────────────┘
-                                         │
-                 ┌───────────────────────┼───────────────────────┐
-                 │                       │                       │
-                 ▼                       ▼                       ▼
-      ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐
-      │  Calibrated Head    │ │  Fast MC Dropout    │ │  Grad-CAM++ Engine  │
-      │   Classification    │ │  Uncertainty Engine │ │  Visual Heatmaps    │
-      └─────────────────────┘ └─────────────────────┘ └─────────────────────┘
-                 │                       │                       │
-                 └───────────────────────┼───────────────────────┘
-                                         │
-                                         ▼
-                             ┌───────────────────────┐
-                             │  Clinical Decision    │
-                             │  Engine (Policy v2.1) │
-                             └───────────────────────┘
-                                         │
-                   ┌─────────────────────┴─────────────────────┐
-                   ▼                                           ▼
-       [ Interactive Streamlit App ]                 [ FastAPI Microservice ]
-```
+## System Workflow
 
----
+1. **Image Input:** Upload a retinal fundus image or provide supported smartphone video input.
+2. **Quality Assessment:** Check whether the image is suitable for analysis.
+3. **Preprocessing:** Resize and prepare the image for the model.
+4. **Classification:** EfficientNetV2-S predicts one of the five DR severity grades.
+5. **Explainability:** Grad-CAM++ generates a heatmap of regions contributing to the prediction.
+6. **Reliability Assessment:** MC Dropout estimates uncertainty, while energy-based OOD scoring evaluates unfamiliar inputs.
+7. **Result Display:** The Streamlit dashboard presents the prediction and supporting visual information.
 
-## 📂 Repository Structure
+## Technologies Used
 
-```
-.
-├── .github/workflows/        # Automated GitHub Actions CI pipeline
-├── .streamlit/               # Streamlit theme and UI configurations
-├── api/                      # Production FastAPI service (endpoints, schemas)
-├── data/                     # Screening history DB & dataset split definitions
-├── docker/                   # Dockerfiles (Dockerfile.cpu & Dockerfile.gpu)
-├── docs/                     # Architectural documentation, Model Card, and results
-│   ├── results/              # Calibration, error analysis, and benchmark JSONs
-│   ├── CHANGELOG_UPGRADE.md  # Detailed phase changelogs
-│   └── MODEL_CARD.md         # Comprehensive clinical model card
-├── experiments/              # Inference audit scripts and verification runs
-├── models/                   # Model weight checkpoints and deployment binaries
-├── scripts/                  # Evaluation, calibration, export, and robustness scripts
-├── src/                      # Core RetinaAI Python package
-│   ├── config.py             # System hyperparameters, paths, and clinical policies
-│   ├── dataset.py            # PyTorch datasets & Albumentations augmentations
-│   ├── evaluate.py           # Evaluation metrics (QWK, sensitivity, specificity)
-│   ├── explain.py            # Grad-CAM++ implementation & spatial entropy
-│   ├── history.py            # SQLite screening session logger & privacy mode
-│   ├── model.py              # EfficientNetV2-S model definition & weight loading
-│   ├── multiframe.py         # Multi-frame burst/video fusion algorithms
-│   ├── predict.py            # Inference orchestrator & clinical decision rules
-│   ├── preprocessing.py      # Retinal circle crop & Ben Graham CLAHE
-│   ├── provenance.py         # Reproducibility tracking & SHA-256 weight locks
-│   ├── quality.py            # Geometric FOV validation & blur detection
-│   ├── uncertainty.py        # Fast MC Dropout & Free-Energy OOD estimation
-│   └── utils.py              # Logging, visualization, and image converters
-├── tests/                    # 10-phase automated Pytest integration & unit test suite
-├── app.py                    # Streamlit web application dashboard
-├── requirements.txt          # Python runtime dependencies
-└── requirements.lock         # Exact pinned dependency lockfile
-```
+- **Programming Language:** Python
+- **Deep Learning:** PyTorch
+- **Model Architecture:** EfficientNetV2-S
+- **Image Processing:** OpenCV
+- **Explainable AI:** Grad-CAM++
+- **Uncertainty Estimation:** MC Dropout
+- **User Interface:** Streamlit
+- **Additional Libraries:** NumPy, scikit-learn, timm
 
----
+## Dataset
 
-## 🚀 Quick Start
+The model training experiment used a combined retinal fundus dataset containing images from APTOS, DDR, IDRiD, EyePACS, and Messidor.
 
-### 1. Local Setup
+Dataset source: [Fundus APTOS + DDR + IDRiD + EyePACS + Messidor](https://www.kaggle.com/datasets/sehastrajits/fundus-aptosddridirdeyepacsmessidor)
 
-```powershell
-# Clone the repository
-git clone https://github.com/navjot-singh-2005/RetinaAI-Explainable-DR-Screening.git
+The dataset was organized into training, validation, and testing splits. Refer to the original dataset source for licensing and usage conditions.
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone YOUR_REPOSITORY_URL
 cd RetinaAI-Explainable-DR-Screening
+```
 
-# Create & activate a virtual environment
-python -m venv venv
-.\venv\Scripts\Activate.ps1   # On Linux/macOS: source venv/bin/activate
+Replace `YOUR_REPOSITORY_URL` with your actual GitHub repository URL.
 
-# Install dependencies (CPU or CUDA)
-pip install --upgrade pip
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121  # or /cpu
+### 2. Install Dependencies
+
+It is recommended to create a Python virtual environment before installing dependencies.
+
+```bash
+python -m venv .venv
+```
+
+Activate the environment on Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+Install the required libraries:
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Launch the Streamlit Dashboard
+### 3. Run the Application
 
 ```bash
 streamlit run app.py
 ```
-Open your browser at `http://localhost:8501` to access the clinical screening interface.
 
-### 3. Launch the REST API Service
+Ensure the trained model checkpoint is available at the location expected by the application.
 
-```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Interactive API documentation will be available at `http://localhost:8000/docs`.
+## Explainable AI and Reliability
 
-### 4. Run via Docker
+RetinaAI combines classification with supporting reliability features:
 
-```bash
-# Build & run CPU container
-docker build -f docker/Dockerfile.cpu -t retinaai:latest .
-docker run -p 8501:8501 retinaai:latest
-```
+- **Grad-CAM++** helps visualize image regions contributing to the model's prediction.
+- **MC Dropout** provides an estimate of predictive uncertainty.
+- **Energy-Based OOD Detection** helps assess whether an input may differ from the expected data distribution.
+- **Image Quality Assessment** helps identify images that may be unsuitable for analysis.
 
----
+These components can help users interpret model behavior, but they do not guarantee correct predictions or reliable rejection of every non-fundus image.
 
-## 🧪 Running the Test Suite
+## Future Improvements
 
-RetinaAI includes a rigorous 10-phase unit and property-based test suite:
+- Improve detection of non-fundus images before classification.
+- Evaluate performance on independent datasets and different camera sources.
+- Improve classification of visually similar severity grades.
+- Enhance smartphone image capture and multi-frame aggregation.
+- Improve uncertainty calibration and OOD detection.
+- Conduct external evaluation and clinical validation with qualified professionals.
 
-```bash
-# Run all tests
-pytest tests/ -v
+## Limitations
 
-# Run specific phase tests
-pytest tests/test_phase3.py -v   # Geometric gating & domain rejection
-pytest tests/test_phase7.py -v   # Clinical invariant testing (Hypothesis)
-```
+RetinaAI is an experimental AI-assisted screening platform. Its predictions may be incorrect, and its reliability features have limitations. Grad-CAM++ visualizations do not independently confirm lesions, while uncertainty and OOD scores are not guarantees of correctness.
 
----
+## Disclaimer
 
-## 📊 Clinical Performance & Invariant Summary
+**For research and educational purposes only.** RetinaAI is not a clinically validated diagnostic system and does not replace professional ophthalmic examination, medical advice, or diagnosis. Screening results should be reviewed by qualified healthcare professionals.
 
-| Metric | Target | Verified Performance |
-| :--- | :--- | :--- |
-| **Referable DR Sensitivity** | $\ge 90.0\%$ | **$93.18\%$** ($95\%$ CI: $[89.8\%, 96.6\%]$) |
-| **Referable DR Specificity** | $\ge 70.0\%$ | **$73.86\%$** |
-| **Expected Calibration Error (ECE)** | $< 5.0\%$ | **$2.68\%$** (Post Temperature Scaling) |
-| **Quadratic Weighted Kappa (QWK)** | $\ge 0.80$ | **$0.865$** |
-| **Non-Fundus False Accept Rate (FAR)** | $0.0\%$ | **$0.0\%$** (Rigid Geometric FOV Rejection) |
-| **Inference Latency** | $< 100\text{ ms}$ | **$28\text{ ms}$** (GPU) / **$65\text{ ms}$** (CPU) |
+## Acknowledgements
 
----
+This project builds on the EfficientNetV2 architecture and publicly available retinal fundus datasets. Please consult the original research publications and dataset sources for further details.
 
-## 🛡️ Disclaimer
-
-*RetinaAI is an investigational software platform developed for research and screening triage assistance. It is intended to assist medical professionals, not replace formal clinical examinations by licensed ophthalmologists.*
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. See `LICENSE` for details.

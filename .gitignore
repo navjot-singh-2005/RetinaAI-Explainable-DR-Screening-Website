@@ -1,0 +1,63 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ===== Virtual Environment =====
+venv/
+env/
+.venv/
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Data & Databases =====
+data/raw/
+data/processed/
+*.db
+*.sqlite
+*.sqlite3
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.csv
+
+# Whitelist documentation images & results
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/results/*.png
+!assets/**
+docs/results/error_gallery/
+
+# ===== Model Weights =====
+models/checkpoints/
+models/final/
+*.pth
+*.pt
+*.onnx
+
+# ===== Outputs =====
+outputs/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+
+# ===== Misc =====
+*.log
+*.tmp
+wandb/
+runs/

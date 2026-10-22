@@ -313,7 +313,7 @@ def predict_pipeline(
     single_pass_probs = single_pass_probs / np.sum(single_pass_probs)
 
     # Conformal prediction set (90% & 95% coverage guarantee)
-    from scripts.calibrate import compute_conformal_sets
+    from src.uncertainty import compute_conformal_sets
     conf_set_90 = compute_conformal_sets(mean_probs[None, :], alpha=0.10)[0]
     conf_set_95 = compute_conformal_sets(mean_probs[None, :], alpha=0.05)[0]
 

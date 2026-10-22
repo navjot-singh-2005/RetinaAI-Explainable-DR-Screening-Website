@@ -1,15 +1,19 @@
 # ============================================================
 # RetinaAI — Diabetic Retinopathy Automated Screening System
-# Dependencies (Research & Production Grade)
+# Dependencies (Production & Streamlit Community Cloud)
 # ============================================================
 
 # ---------- Core Deep Learning ----------
-# PyTorch is installed separately via:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+torch>=2.0.0
+torchvision>=0.15.0
 timm>=1.0.0                    # EfficientNetV2, ConvNeXt, Swin model zoo
 
+# ---------- Model Hub & External Storage ----------
+huggingface_hub>=0.20.0        # Automatic model downloading & caching
+requests>=2.28.0
+
 # ---------- Image Processing ----------
-opencv-python-headless>=4.8.0  # Headless build (no GUI conflicts)
+opencv-python-headless>=4.8.0  # Headless build (no GUI / X11 conflicts on Linux)
 albumentations>=1.4.0          # Augmentation pipeline
 Pillow>=10.0.0                 # Image I/O
 
@@ -40,5 +44,3 @@ onnxscript>=0.1.0
 # ---------- Testing & Utilities ----------
 tqdm>=4.65.0                   # Progress bars
 pytest>=7.4.0                  # Automated unit test runner
-hypothesis>=6.80.0             # Property-based invariant testing
-httpx>=0.24.0                  # HTTP client for FastAPI test suite

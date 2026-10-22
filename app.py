@@ -597,16 +597,60 @@ st.markdown("""
 
     /* File Uploader styling */
     div[data-testid="stFileUploader"] {
-        background: rgba(13, 20, 38, 0.45);
-        border: 2px dashed rgba(56, 189, 248, 0.18);
-        border-radius: 14px;
-        padding: 1.5rem;
-        transition: all 0.3s ease;
+        background: rgba(13, 20, 38, 0.45) !important;
+        border: 2px dashed rgba(56, 189, 248, 0.22) !important;
+        border-radius: 14px !important;
+        padding: 1.2rem !important;
+        transition: all 0.3s ease !important;
     }
     div[data-testid="stFileUploader"]:hover {
-        border-color: rgba(56, 189, 248, 0.4);
-        background: rgba(13, 20, 38, 0.6);
-        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.05);
+        border-color: rgba(56, 189, 248, 0.45) !important;
+        background: rgba(13, 20, 38, 0.65) !important;
+        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.08) !important;
+    }
+    div[data-testid="stFileUploader"] section {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+    div[data-testid="stFileUploader"] section > div {
+        color: #94A3B8 !important;
+    }
+    /* Uploaded File Chip / Card Styling in Dark Theme */
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"],
+    div[data-testid="stFileUploaderFile"],
+    [data-testid="stFileUploaderFile"],
+    div[data-testid="stFileUploaderFileData"],
+    [data-testid="stFileUploaderFileData"],
+    div[data-testid="stFileUploaderDropzone"] {
+        background-color: rgba(15, 23, 42, 0.9) !important;
+        background: rgba(15, 23, 42, 0.9) !important;
+        border: 1px solid rgba(56, 189, 248, 0.25) !important;
+        border-radius: 10px !important;
+        color: #F8FAFC !important;
+    }
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] span,
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] div,
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] p,
+    [data-testid="stFileUploaderFile"] *,
+    [data-testid="stFileUploaderFileData"] * {
+        color: #F8FAFC !important;
+    }
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] small,
+    [data-testid="stFileUploaderFile"] small {
+        color: #94A3B8 !important;
+    }
+    div[data-testid="stFileUploader"] button[kind="secondary"],
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderDeleteBtn"] button {
+        background: rgba(30, 41, 59, 0.8) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #F8FAFC !important;
+        border-radius: 6px !important;
+    }
+    div[data-testid="stFileUploader"] [data-testid="stFileUploaderDeleteBtn"] button:hover {
+        background: rgba(239, 68, 68, 0.3) !important;
+        border-color: rgba(239, 68, 68, 0.5) !important;
+        color: #FCA5A5 !important;
     }
     
     /* Buttons */

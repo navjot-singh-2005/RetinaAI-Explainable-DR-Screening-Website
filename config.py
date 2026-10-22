@@ -12,7 +12,11 @@ from typing import List, Tuple
 
 
 # ── Project Root ──────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Resolves correctly whether config.py is in src/ or at the repository root
+if Path(__file__).resolve().parent.name == "src":
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent
 
 
 @dataclass
@@ -140,6 +144,10 @@ class DecisionPolicyConfig:
 
     # Temperature scaling (learned post-training on validation set)
     temperature: float = 1.4239
+
+    # Ordinal grading cutoffs (optional, disabled by default for direct softmax alignment)
+    use_ordinal_staging: bool = False
+    ordinal_thresholds: List[float] = field(default_factory=lambda: [0.5344, 1.3991, 2.0936, 3.8260])
 
     # Rejection and referral reason templates
     reason_non_fundus: str = "REJECT: Non-Fundus Input (Invalid Image Domain)"

@@ -17,6 +17,7 @@ Usage:
     report = predict_pipeline(image_path, model)
 """
 
+import time
 import cv2
 import numpy as np
 import torch
@@ -288,7 +289,10 @@ def predict_pipeline(
     # Format for PyTorch: (1, C, H, W)
     tensor = torch.from_numpy(tensor).permute(2, 0, 1).unsqueeze(0).to(device)
 
+    t_pipe_start = time.perf_counter()
+
     # 4. OOD Detection (Energy Score)
+    t_model_start = time.perf_counter()
     ood_score = compute_energy_score(model, tensor)
 
     # 5. MC Dropout Classification & Uncertainty (with optional TTA evaluation mode)
@@ -296,36 +300,36 @@ def predict_pipeline(
         mc_results = predict_with_tta(model, tensor, device=device)
     else:
         mc_results = mc_dropout_predict(model, tensor, device=device)
-    
-    predicted_class = mc_results["predicted_class"]
-    
-    # Apply Temperature Scaling (learned post-training)
-    temp = SCREENING.temperature
-    raw_probs = np.array(mc_results["mean_probs"])
-    # Apply temperature scaling to log probabilities
-    log_probs = np.log(raw_probs + 1e-10)
-    scaled_probs = np.exp(log_probs / temp) / np.sum(np.exp(log_probs / temp))
-    calibrated_confidence = float(np.max(scaled_probs))
-    predicted_class = int(np.argmax(scaled_probs))
+    model_latency = time.perf_counter() - t_model_start
+
+    # ONE AUTHORITATIVE PREDICTION:
+    # Selected directly using argmax over the authoritative probability vector displayed on dashboard
+    mean_probs = np.array(mc_results["mean_probs"], dtype=np.float64)
+    mean_probs = mean_probs / np.sum(mean_probs)  # strictly normalize
+
+    predicted_class = int(np.argmax(mean_probs))
+    confidence = float(mean_probs[predicted_class])
+    single_pass_probs = np.array(mc_results.get("single_pass_probs", mean_probs), dtype=np.float64)
+    single_pass_probs = single_pass_probs / np.sum(single_pass_probs)
 
     # Conformal prediction set (90% & 95% coverage guarantee)
     from scripts.calibrate import compute_conformal_sets
-    conf_set_90 = compute_conformal_sets(scaled_probs[None, :], alpha=0.10)[0]
-    conf_set_95 = compute_conformal_sets(scaled_probs[None, :], alpha=0.05)[0]
+    conf_set_90 = compute_conformal_sets(mean_probs[None, :], alpha=0.10)[0]
+    conf_set_95 = compute_conformal_sets(mean_probs[None, :], alpha=0.05)[0]
 
     # Normalize to [0, 1] for Grad-CAM overlay to match original behavior
     display_rgb = preprocessed_rgb.astype(np.float32) / 255.0
 
     # 6. Explainability (Grad-CAM++)
     explanation = generate_explanation_report(
-        model, tensor, display_rgb, predicted_class, calibrated_confidence
+        model, tensor, display_rgb, predicted_class, confidence
     )
 
     # 7. Decision Engine
-    referable_prob = float(np.sum(scaled_probs[2:]))
+    referable_prob = float(np.sum(mean_probs[2:]))
     decision_info = evaluate_clinical_decision(
         predicted_class=predicted_class,
-        confidence=calibrated_confidence,
+        confidence=confidence,
         uncertainty=mc_results["predictive_entropy"],
         ood_score=ood_score,
         quality_passed=quality_report["passed"],
@@ -334,6 +338,7 @@ def predict_pipeline(
         quality_report=quality_report,
     )
     decision = decision_info["decision"]
+    pipeline_latency = time.perf_counter() - t_pipe_start
 
     # Build final report
     report = {
@@ -345,10 +350,11 @@ def predict_pipeline(
         "prediction": {
             "class_index": predicted_class,
             "class_name": DATA.class_names[predicted_class],
-            "confidence": calibrated_confidence,
-            "all_probabilities": scaled_probs.tolist(),
-            "raw_probabilities": raw_probs.tolist(),
-            "temperature_scaled": temp,
+            "confidence": confidence,
+            "all_probabilities": mean_probs.tolist(),
+            "single_pass_probabilities": single_pass_probs.tolist(),
+            "inference_mode": "mc_dropout",
+            "mc_passes": mc_results.get("n_passes", MODEL.mc_dropout_passes),
             "conformal_set_90": [DATA.class_names[i] for i in conf_set_90],
             "conformal_set_95": [DATA.class_names[i] for i in conf_set_95],
         },
@@ -356,9 +362,16 @@ def predict_pipeline(
             "entropy": mc_results["predictive_entropy"],
             "epistemic": mc_results["epistemic_uncertainty"],
             "aleatoric": mc_results["aleatoric_uncertainty"],
+            "unit": "nats",
         },
         "ood": {
             "energy_score": ood_score,
+            "threshold": DECISION_POLICY.ood_energy_threshold,
+            "is_ood": bool(ood_score > DECISION_POLICY.ood_energy_threshold),
+        },
+        "latency": {
+            "model_seconds": model_latency,
+            "pipeline_seconds": pipeline_latency,
         },
         "decision": decision,
         "decision_reason": decision_info["decision_reason"],

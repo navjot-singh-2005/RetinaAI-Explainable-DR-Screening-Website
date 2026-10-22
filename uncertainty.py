@@ -26,17 +26,17 @@ from src.config import MODEL
 
 def enable_mc_dropout(model: nn.Module):
     """
-    Enable dropout layers while keeping everything else in eval mode.
+    Enable dropout layers while keeping BatchNorm and other layers in eval mode.
 
-    This is the key trick for MC Dropout: we want BatchNorm to use
-    running statistics (eval mode) but Dropout to remain stochastic
+    This is the key requirement for MC Dropout: BatchNorm must use
+    frozen running statistics (eval mode) while Dropout remains stochastic
     (train mode).
 
     Args:
         model: The neural network model (already in eval mode).
     """
     for module in model.modules():
-        if isinstance(module, nn.Dropout):
+        if isinstance(module, (nn.Dropout, nn.Dropout1d, nn.Dropout2d)):
             module.train()
 
 
@@ -51,7 +51,7 @@ def mc_dropout_predict(
 
     Runs T stochastic forward passes with dropout enabled,
     then computes uncertainty metrics from the distribution
-    of predictions.
+    of predictions. Also records a single deterministic eval pass.
 
     Args:
         model: Trained DRClassifier.
@@ -61,14 +61,16 @@ def mc_dropout_predict(
 
     Returns:
         Dictionary with:
-            - mean_probs: Mean predicted probabilities (num_classes,)
-            - predicted_class: Argmax of mean_probs
-            - confidence: Max of mean_probs
-            - predictive_entropy: Total uncertainty (scalar)
-            - epistemic_uncertainty: Model uncertainty (scalar)
-            - aleatoric_uncertainty: Data uncertainty (scalar)
-            - per_class_variance: Variance per class (num_classes,)
+            - mean_probs: Mean predicted probabilities across T passes (num_classes,)
+            - single_pass_probs: Deterministic single forward pass probabilities (num_classes,)
+            - predicted_class: Argmax of mean_probs (int)
+            - confidence: Max of mean_probs (float)
+            - predictive_entropy: Total uncertainty in nats (scalar float)
+            - epistemic_uncertainty: Model mutual info in nats (scalar float >= 0.0)
+            - aleatoric_uncertainty: Data uncertainty in nats (scalar float)
+            - per_class_variance: Variance per class across T passes (num_classes,)
             - all_probs: All T predictions (T, num_classes)
+            - n_passes: T passes performed
     """
     n_passes = n_passes or MODEL.mc_dropout_passes
 
@@ -77,11 +79,19 @@ def mc_dropout_predict(
 
     input_tensor = input_tensor.to(device)
 
-    # Set model to eval, then re-enable dropout
+    # 1. Deterministic single forward pass (eval mode, dropout OFF)
+    model.eval()
+    with torch.no_grad():
+        single_logits = model(input_tensor)
+        single_probs = F.softmax(single_logits, dim=-1)
+        if input_tensor.shape[0] == 1:
+            single_probs = single_probs.squeeze(0)
+        single_probs_np = single_probs.cpu().numpy()
+
+    # 2. MC Dropout stochastic forward passes (eval mode, dropout ON)
     model.eval()
     enable_mc_dropout(model)
 
-    # Collect T stochastic predictions
     all_probs = []
     with torch.no_grad():
         if hasattr(model, 'backbone') and hasattr(model, 'head') and input_tensor.shape[0] == 1:
@@ -99,41 +109,52 @@ def mc_dropout_predict(
             if input_tensor.shape[0] == 1:
                 all_probs = all_probs.squeeze(1)  # (T, C)
 
+    # Return model to clean eval mode
+    model.eval()
+
     # Mean prediction across T passes
     mean_probs = all_probs.mean(dim=0)  # (C,)
+    mean_probs = mean_probs / mean_probs.sum()  # ensure exact sum to 1.0
 
-    # Predicted class and confidence
+    # Predicted class and confidence authoritative selection
     confidence, predicted_class = mean_probs.max(dim=-1)
 
-    # ── Uncertainty Metrics ────────────────────────────────────
+    # ── Uncertainty Metrics in Natural Units (Nats) ─────────────
 
-    # 1. Predictive Entropy: H[y|x, D] = -Σ p̄ log p̄
-    #    Total uncertainty = epistemic + aleatoric
+    # 1. Predictive Entropy: H[y|x, D] = -Σ p̄ ln p̄
+    safe_mean_p = torch.clamp(mean_probs, min=1e-12)
     predictive_entropy = -torch.sum(
-        mean_probs * torch.log(mean_probs + 1e-10), dim=-1
+        torch.where(mean_probs > 0, mean_probs * torch.log(safe_mean_p), torch.zeros_like(mean_probs)),
+        dim=-1
     )
 
     # 2. Expected Entropy (aleatoric): E[H[y|x, θ]]
-    #    Average entropy of individual predictions
+    safe_all_p = torch.clamp(all_probs, min=1e-12)
     individual_entropies = -torch.sum(
-        all_probs * torch.log(all_probs + 1e-10), dim=-1
+        torch.where(all_probs > 0, all_probs * torch.log(safe_all_p), torch.zeros_like(all_probs)),
+        dim=-1
     )  # (T,) or (T, B)
     aleatoric_uncertainty = individual_entropies.mean(dim=0)
 
-    # 3. Epistemic Uncertainty (mutual information):
-    #    I[y, θ|x, D] = H[y|x, D] - E[H[y|x, θ]]
-    epistemic_uncertainty = predictive_entropy - aleatoric_uncertainty
+    # 3. Epistemic Uncertainty (mutual information in nats):
+    #    I[y, θ|x, D] = H[y|x, D] - E[H[y|x, θ]] >= 0
+    epistemic_raw = predictive_entropy - aleatoric_uncertainty
+    if bool((epistemic_raw < -1e-4).any()):
+        import warnings
+        warnings.warn(f"Materially negative mutual information detected: {epistemic_raw.item():.6f}")
+    epistemic_uncertainty = torch.clamp(epistemic_raw, min=0.0)
 
     # 4. Per-class variance
     per_class_variance = all_probs.var(dim=0)  # (C,)
 
     return {
         "mean_probs": mean_probs.numpy(),
-        "predicted_class": int(predicted_class.item()) if predicted_class.dim() == 0 else predicted_class.numpy(),
-        "confidence": float(confidence.item()) if confidence.dim() == 0 else confidence.numpy(),
-        "predictive_entropy": float(predictive_entropy.item()) if predictive_entropy.dim() == 0 else predictive_entropy.numpy(),
-        "epistemic_uncertainty": float(epistemic_uncertainty.item()) if epistemic_uncertainty.dim() == 0 else epistemic_uncertainty.numpy(),
-        "aleatoric_uncertainty": float(aleatoric_uncertainty.item()) if aleatoric_uncertainty.dim() == 0 else aleatoric_uncertainty.numpy(),
+        "single_pass_probs": single_probs_np,
+        "predicted_class": int(predicted_class.item()) if predicted_class.dim() == 0 else int(predicted_class.numpy()[0]),
+        "confidence": float(confidence.item()) if confidence.dim() == 0 else float(confidence.numpy()[0]),
+        "predictive_entropy": float(predictive_entropy.item()) if predictive_entropy.dim() == 0 else float(predictive_entropy.numpy()[0]),
+        "epistemic_uncertainty": float(epistemic_uncertainty.item()) if epistemic_uncertainty.dim() == 0 else float(epistemic_uncertainty.numpy()[0]),
+        "aleatoric_uncertainty": float(aleatoric_uncertainty.item()) if aleatoric_uncertainty.dim() == 0 else float(aleatoric_uncertainty.numpy()[0]),
         "per_class_variance": per_class_variance.numpy(),
         "all_probs": all_probs.numpy(),
         "n_passes": n_passes,

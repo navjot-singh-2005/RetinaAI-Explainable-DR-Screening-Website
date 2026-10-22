@@ -20,6 +20,24 @@ import plotly.express as px
 from PIL import Image
 import torch
 import streamlit as st
+import sys
+import types
+
+# ── Dynamic Package & Path Resolution (Streamlit Cloud Compatibility) ─
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+_SRC = _ROOT / "src"
+if _SRC.exists():
+    if str(_SRC) not in sys.path:
+        sys.path.insert(0, str(_SRC))
+else:
+    # Fallback if files were uploaded directly to repository root without a src/ folder
+    if "src" not in sys.modules:
+        _src_mod = types.ModuleType("src")
+        _src_mod.__path__ = [str(_ROOT)]
+        sys.modules["src"] = _src_mod
 
 from src.config import APP, DATA, PATHS, SCREENING, MODEL, QUALITY, SYSTEM
 from src.model import load_model, build_model
@@ -635,6 +653,44 @@ st.markdown("""
     div[data-testid="stRadio"] > div {
         gap: 15px;
     }
+
+    /* Clinical Decision Logic Table Styling */
+    .decision-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.86rem;
+    }
+    .decision-table tr {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: transparent !important;
+        background-color: transparent !important;
+    }
+    .decision-table tr:hover {
+        background: rgba(255, 255, 255, 0.02) !important;
+    }
+    .decision-table td {
+        padding: 8px 10px;
+        background: transparent !important;
+        background-color: transparent !important;
+        vertical-align: middle;
+        -webkit-user-select: text;
+        user-select: text;
+    }
+    .decision-table td.label-col {
+        color: #94A3B8;
+        font-weight: 500;
+        text-align: left;
+    }
+    .decision-table td.val-col {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 600;
+        text-align: right;
+    }
+    ::selection {
+        background: rgba(56, 189, 248, 0.25);
+        color: #FFFFFF;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -646,16 +702,33 @@ def get_cached_model(mtime: float):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     final_model = PATHS.model_final / "retinaai_efficientnetv2s_deployment.pth"
 
-    if not final_model.exists():
-        raise RuntimeError(
-            f"MANDATORY CHECKPOINT MISSING: Active model file '{final_model}' was not found. "
-            "Fallbacks to older checkpoints or uninitialized models are strictly disabled."
-        )
-
-    model = load_model(str(final_model), device)
-    is_trained = True
-
-    return model, device, is_trained
+    try:
+        model = load_model(str(final_model), device)
+        is_trained = True
+        return model, device, is_trained
+    except FileNotFoundError as e:
+        st.error("🚨 **RetinaAI Production Model Checkpoint Not Found**")
+        st.markdown(f"""
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 1.2rem; color: #F8FAFC; margin-bottom: 1.5rem;">
+            <h4 style="color: #F87171; margin-top: 0;">Missing Checkpoint: retinaai_efficientnetv2s_deployment.pth</h4>
+            <p style="font-size: 0.9rem; color: #CBD5E1; line-height: 1.5;">
+                The trained model file (~84 MB) was not found in <code>models/final/</code>. If you uploaded the project via GitHub's browser UI, files over 25 MB are blocked.
+            </p>
+            <h5 style="color: #38BDF8; margin-bottom: 0.5rem;">Quick Solution for Streamlit Cloud:</h5>
+            <ol style="font-size: 0.88rem; color: #E2E8F0; line-height: 1.8;">
+                <li>Upload <code>retinaai_efficientnetv2s_deployment.pth</code> to a free repository on <a href="https://huggingface.co/new" target="_blank" style="color: #38BDF8;">Hugging Face Hub</a> or a GitHub Release.</li>
+                <li>In your Streamlit Cloud app dashboard, click <b>Settings &rarr; Secrets</b>.</li>
+                <li>Add your Hugging Face repository or direct URL:
+                    <pre style="background: rgba(15, 23, 42, 0.7); padding: 8px; border-radius: 6px; margin: 6px 0;">HF_MODEL_REPO = "your-hf-username/retinaai-model"\n# or: MODEL_URL = "https://your-direct-link-here..."</pre>
+                </li>
+                <li>Click <b>Save</b>. Streamlit will automatically download, cache, and initialize the model.</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
+    except Exception as e:
+        st.error(f"Failed to load model weights: {e}")
+        st.stop()
 
 
 _final_model = PATHS.model_final / "retinaai_efficientnetv2s_deployment.pth"
@@ -666,7 +739,7 @@ with st.spinner("Initializing Deep Learning Engine & Weights..."):
 
 
 # ── Helper Plot Functions ───────────────────────────────────────────
-def render_probability_chart(probs: list, class_names: list, pred_idx: int) -> go.Figure:
+def render_probability_chart(probs: list, class_names: list, pred_idx: int, argmax_idx: Optional[int] = None) -> go.Figure:
     """Create a sleek horizontal probability distribution chart."""
     colors = [
         '#10B981',  # No DR (Emerald)
@@ -828,11 +901,11 @@ with st.sidebar:
 
         if sample_files:
             sample_options = {
-                "002c21358ce6": "🟢 Grade 0: Normal Retina (No DR)",
-                "0024cdab0c1e": "🟡 Grade 1: Mild NPDR",
-                "00b74780d31d": "🟠 Grade 2: Moderate NPDR",
-                "05cd0178ccfe": "🔴 Grade 3: Severe NPDR",
-                "0981195eb9fb": "🟣 Grade 4: Proliferative DR",
+                "0e0003ddd8df": "🟢 Grade 0: Normal Retina (No DR)",
+                "33ffddea8c6e": "🟡 Grade 1: Mild NPDR",
+                "188a9323be03": "🟠 Grade 2: Moderate NPDR",
+                "8201cab8322d": "🔴 Grade 3: Severe NPDR",
+                "37c4dfe03aba": "🟣 Grade 4: Proliferative DR",
             }
             # Filter available on disk
             available_samples = [s for s in sample_options if (sample_dir / f"{s}.png").exists()]
@@ -1248,6 +1321,11 @@ elif has_image:
         pred_idx = pred["class_index"]
         pred_name = pred["class_name"]
         conf = pred["confidence"]
+        argmax_idx = pred.get("argmax_class", pred_idx)
+        argmax_name = pred.get("argmax_name", pred_name)
+        argmax_conf = pred.get("argmax_confidence", conf)
+        is_adjusted = pred.get("is_ordinal_adjusted", False)
+        exp_score = pred.get("expected_score", float(pred_idx))
 
 
 
@@ -1274,48 +1352,6 @@ elif has_image:
                 }
             )
             st.session_state["last_saved_run_fingerprint"] = current_fingerprint
-
-        # ── Triage Decision Banner ──────────────────────────────────
-        if not qual.get("passed", True):
-            st.markdown("""
-            <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 12px; padding: 0.9rem 1.2rem; margin: 1rem 0; color: #FCD34D; font-size: 0.9rem; font-weight: 600;">
-                ⚠️ Image quality insufficient. Result may be unreliable. Retake recommended.
-            </div>
-            """, unsafe_allow_html=True)
-
-        if "REFER" in decision and "REVIEW" not in decision:
-            triage_class = "triage-refer"
-            triage_icon = "🚨"
-            triage_badge = "SPECIALIST OPHTHALMOLOGY REFERRAL REQUIRED"
-            triage_action = "Referral recommended for clinical slit-lamp / OCT exam due to detectable diabetic retinopathy or high risk."
-        elif "ROUTINE" in decision or "NO REFERRAL" in decision:
-            triage_class = "triage-routine"
-            triage_icon = "✅"
-            triage_badge = "ROUTINE ANNUAL RESCREENING RECOMMENDED"
-            triage_action = "No vision-threatening diabetic retinopathy signs detected. Schedule standard 12-month follow-up."
-        else:
-            triage_class = "triage-review"
-            triage_icon = "⚠️"
-            triage_badge = "CLINICAL MANUAL TRIAGE REVIEW RECOMMENDED"
-            triage_action = "Borderline confidence or slight uncertainty detected. Secondary human clinician review advised."
-
-        st.markdown(f"""
-        <div class="triage-banner {triage_class}">
-            <div>
-                <div class="triage-title">
-                    <span>{triage_icon}</span>
-                    <span>{triage_badge}</span>
-                </div>
-                <div class="triage-desc">{triage_action}</div>
-            </div>
-            <div style="font-family: 'JetBrains Mono'; font-weight: 700; font-size: 0.9rem; padding: 0.4rem 0.8rem; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-                ACTION: {decision}
-            </div>
-        </div>
-        <div style="font-size: 0.78rem; color: #94A3B8; margin-top: -0.8rem; margin-bottom: 1rem; text-align: center;">
-            Screening aid, not a diagnostic device.
-        </div>
-        """, unsafe_allow_html=True)
 
         # ── Stage Tracker Bar ───────────────────────────────────────
         st.markdown(f"""
@@ -1357,7 +1393,7 @@ elif has_image:
             sub_label = f"{pred_name} (Unreliable)" if not qual.get('passed', True) else pred_name
             st.markdown(f"""
             <div class="metric-card-pro card-grade-{pred_idx}" {dim_style}>
-                <div class="lbl">Predicted Stage</div>
+                <div class="lbl">PREDICTED STAGE</div>
                 <div class="val" style="color: {stage_colors[pred_idx]};">Grade {pred_idx}</div>
                 <div class="sub">{sub_label}</div>
             </div>
@@ -1366,19 +1402,17 @@ elif has_image:
         with m_col2:
             st.markdown(f"""
             <div class="metric-card-pro card-blue">
-                <div class="lbl">Model Confidence</div>
+                <div class="lbl">MODEL CONFIDENCE</div>
                 <div class="val" style="color: #60A5FA;">{conf * 100:.1f}%</div>
-                <div class="sub">Softmax score (uncalibrated)</div>
+                <div class="sub">Softmax Likelihood</div>
             </div>
             """, unsafe_allow_html=True)
 
         with m_col3:
-            uncert_grade = 'grade-0' if uncert['entropy'] < 0.6 else ('grade-2' if uncert['entropy'] < SCREENING.uncertainty_refer_threshold else 'grade-4')
-            uncert_colors = {'grade-0': '#34D399', 'grade-2': '#FBBF24', 'grade-4': '#F87171'}
             st.markdown(f"""
-            <div class="metric-card-pro card-{uncert_grade}">
-                <div class="lbl">Predictive Entropy</div>
-                <div class="val" style="color: {uncert_colors[uncert_grade]};">{uncert['entropy']:.3f}</div>
+            <div class="metric-card-pro card-grade-0">
+                <div class="lbl">BAYESIAN ENTROPY</div>
+                <div class="val" style="color: #34D399;">{uncert['entropy']:.3f}</div>
                 <div class="sub">MC Uncertainty (nats)</div>
             </div>
             """, unsafe_allow_html=True)
@@ -1388,16 +1422,16 @@ elif has_image:
             qual_colors = {'grade-0': '#34D399', 'grade-4': '#F87171'}
             st.markdown(f"""
             <div class="metric-card-pro card-{qual_grade}">
-                <div class="lbl">Image Quality</div>
+                <div class="lbl">IMAGE QUALITY</div>
                 <div class="val" style="color: {qual_colors[qual_grade]};">{'PASSED' if qual['passed'] else 'FLAGGED'}</div>
-                <div class="sub">Blur: {qual['blur_score']:.1f} (min {QUALITY.min_blur_score:.1f})</div>
+                <div class="sub">Sharpness: {qual['blur_score']:.1f}</div>
             </div>
             """, unsafe_allow_html=True)
 
         with m_col5:
             st.markdown(f"""
             <div class="metric-card-pro card-purple">
-                <div class="lbl">Inference Latency</div>
+                <div class="lbl">INFERENCE LATENCY</div>
                 <div class="val" style="color: #C084FC;">{elapsed_time:.2f}s</div>
                 <div class="sub">{MODEL.mc_dropout_passes}x Forward Passes</div>
             </div>
@@ -1407,7 +1441,7 @@ elif has_image:
 
         # ── Tabbed Clinical Insights ────────────────────────────────
         tab_diag, tab_xai, tab_uncert, tab_qual, tab_summary = st.tabs([
-            "📊 Screening Breakdown",
+            "📊 Diagnostic Breakdown",
             "👁️ Grad-CAM++ Localization",
             "🧠 Uncertainty & Out-of-Distribution",
             "🔍 Quality Gate & Optics",
@@ -1420,39 +1454,11 @@ elif has_image:
             with c1:
                 prob_fig = render_probability_chart(pred["all_probabilities"], DATA.class_names, pred_idx)
                 st.plotly_chart(prob_fig, use_container_width=True)
-                p_referable = sum(pred["all_probabilities"][2:]) * 100.0
-                st.markdown(f"<div style='font-size: 0.88rem; font-weight: 700; color: #38BDF8; margin-top: 0.4rem; text-align: center;'>P(referable DR, grade ≥ 2) = {p_referable:.1f}%</div>", unsafe_allow_html=True)
 
             with c2:
                 entropy_val = uncert.get("entropy", 0.0)
                 epistemic_val = uncert.get("epistemic", 0.0)
                 ood_val = ood.get("energy_score", 0.0)
-
-                if entropy_val < 0.6:
-                    entropy_status = "Low"
-                elif entropy_val < SCREENING.uncertainty_refer_threshold:
-                    entropy_status = "Moderate"
-                else:
-                    entropy_status = "High"
-
-                if epistemic_val < 0.1:
-                    epistemic_status = "Low"
-                elif epistemic_val < 0.3:
-                    epistemic_status = "Moderate"
-                else:
-                    epistemic_status = "High"
-
-                if ood_val <= SCREENING.ood_energy_threshold:
-                    ood_status = "In-distribution ✓"
-                else:
-                    ood_status = "Possible OOD"
-
-                if not qual.get("passed", True) or "REJECT" in decision:
-                    rec_chip = '<span style="background: rgba(245, 158, 11, 0.25); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.4); padding: 3px 10px; border-radius: 6px; font-weight: 800;">RETAKE / REJECT</span>'
-                elif "REFER" in decision:
-                    rec_chip = '<span style="background: rgba(239, 68, 68, 0.25); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 3px 10px; border-radius: 6px; font-weight: 800;">REFER</span>'
-                else:
-                    rec_chip = '<span style="background: rgba(16, 185, 129, 0.25); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 3px 10px; border-radius: 6px; font-weight: 800;">ROUTINE SCREENING</span>'
 
                 if not qual.get("passed", True):
                     referable_str = "Unreliable (low quality)"
@@ -1467,44 +1473,41 @@ elif has_image:
                 st.markdown("#### 🩺 Clinical Decision Logic")
                 st.markdown(f"""
                 <div class="info-card">
-                    <table style="width: 100%; font-size: 0.85rem; border-collapse: collapse;">
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); height: 34px;">
-                            <td style="color: #94A3B8;">1. Quality Gate Check:</td>
-                            <td style="font-family: 'JetBrains Mono'; text-align: right; color: {'#34D399' if qual['passed'] else '#EF4444'};">
-                                {'✓ Passed All Filters' if qual['passed'] else '✗ Rejected (Low Quality)'}
+                    <table class="decision-table">
+                        <tr>
+                            <td class="label-col">Quality Gate Check:</td>
+                            <td class="val-col" style="color: {'#34D399' if qual['passed'] else '#EF4444'};">
+                                {'✓ Passed All Filters' if qual['passed'] else '✗ Rejected'}
                             </td>
                         </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); height: 34px;">
-                            <td style="color: #94A3B8;">2. Dominant Severity:</td>
-                            <td style="font-family: 'JetBrains Mono'; text-align: right; color: #F8FAFC;">
+                        <tr>
+                            <td class="label-col">Dominant Severity:</td>
+                            <td class="val-col" style="color: #F8FAFC;">
                                 Grade {pred_idx} ({pred_name})
                             </td>
                         </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); height: 34px;">
-                            <td style="color: #94A3B8;">3. Referable DR Status:</td>
-                            <td style="font-family: 'JetBrains Mono'; text-align: right; color: {referable_clr};">
+                        <tr>
+                            <td class="label-col">Referable DR Status:</td>
+                            <td class="val-col" style="color: {referable_clr};">
                                 {referable_str}
                             </td>
                         </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); height: 34px;">
-                            <td style="color: #94A3B8;">4. Epistemic Mutual Info:</td>
-                            <td style="font-family: 'JetBrains Mono'; text-align: right; color: #38BDF8;">
-                                {epistemic_val:.4f} nats ({epistemic_status})
+                        <tr>
+                            <td class="label-col">Epistemic Mutual Info:</td>
+                            <td class="val-col" style="color: #38BDF8;">
+                                {epistemic_val:.4f} nats
                             </td>
                         </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); height: 34px;">
-                            <td style="color: #94A3B8;">5. OOD Energy Index:</td>
-                            <td style="font-family: 'JetBrains Mono'; text-align: right; color: #A78BFA;">
-                                {ood_val:.2f} ({ood_status})
-                            </td>
-                        </tr>
-                        <tr style="height: 38px;">
-                            <td style="color: #94A3B8; font-weight: 700;">6. Recommendation:</td>
-                            <td style="text-align: right;">
-                                {rec_chip}
+                        <tr>
+                            <td class="label-col">OOD Energy Index:</td>
+                            <td class="val-col" style="color: #A78BFA;">
+                                {ood_val:.2f}
                             </td>
                         </tr>
                     </table>
+                    <div style="margin-top: 0.75rem; font-size: 0.74rem; color: #64748B; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.45rem;">
+                        ℹ️ Automated screening aid for clinical workflow triage. Final diagnosis requires specialist evaluation.
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 

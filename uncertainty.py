@@ -19,9 +19,38 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 from src.config import MODEL
+
+
+def compute_conformal_sets(y_prob: np.ndarray, alpha: float = 0.05) -> List[List[int]]:
+    """
+    Compute Split Conformal Prediction sets with 1 - alpha coverage guarantee.
+    Uses Adaptive Prediction Sets (APS).
+
+    Args:
+        y_prob: Probability array of shape (N, C) or (C,).
+        alpha: Miscoverage rate (e.g. 0.05 for 95% coverage, 0.10 for 90% coverage).
+
+    Returns:
+        List of lists of class indices included in prediction set.
+    """
+    if y_prob.ndim == 1:
+        y_prob = y_prob[None, :]
+
+    sorted_idx = np.argsort(-y_prob, axis=1)
+    sorted_probs = np.take_along_axis(y_prob, sorted_idx, axis=1)
+    cum_probs = np.cumsum(sorted_probs, axis=1)
+
+    prediction_sets = []
+    for i in range(len(y_prob)):
+        cutoff_idx = np.searchsorted(cum_probs[i], 1.0 - alpha)
+        cutoff_idx = min(cutoff_idx, y_prob.shape[1] - 1)
+        set_classes = sorted_idx[i, :cutoff_idx + 1].tolist()
+        prediction_sets.append(sorted(set_classes))
+
+    return prediction_sets
 
 
 def enable_mc_dropout(model: nn.Module):
